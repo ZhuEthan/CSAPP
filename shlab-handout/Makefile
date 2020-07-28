@@ -92,7 +92,6 @@ rtest15:
 rtest16:
 	$(DRIVER) -t trace16.txt -s $(TSHREF) -a $(TSHARGS)
 
-
 # clean up
 clean:
 	rm -f $(FILES) *.o *~
