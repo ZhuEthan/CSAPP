@@ -689,10 +689,10 @@ static trace_t *read_trace(stats_t *stats, const char *tracedir,
 	if ((tracefile = fopen(trace->filename, "r")) == NULL) {
 		unix_error("Could not open %s in read_trace", trace->filename);
 	}
-	fscanf(tracefile, "%d", &trace->weight);
-	fscanf(tracefile, "%d", &trace->num_ids);
-	fscanf(tracefile, "%d", &trace->num_ops);
-	fscanf(tracefile, "%d", &trace->ignore_ranges);
+	if (fscanf(tracefile, "%d", &trace->weight)){};
+	if (fscanf(tracefile, "%d", &trace->num_ids)){};
+	if (fscanf(tracefile, "%d", &trace->num_ops)){};
+	if (fscanf(tracefile, "%d", &trace->ignore_ranges)){};
 
 	if(trace->weight != 0 && trace->weight != 1) {
 		app_error("%s: weight can only be zero or one", trace->filename);
@@ -728,21 +728,21 @@ static trace_t *read_trace(stats_t *stats, const char *tracedir,
 	while (fscanf(tracefile, "%s", type) != EOF) {
 		switch(type[0]) {
 			case 'a':
-				fscanf(tracefile, "%u %u", &index, &size);
+				if (fscanf(tracefile, "%u %u", &index, &size)){};
 				trace->ops[op_index].type = ALLOC;
 				trace->ops[op_index].index = index;
 				trace->ops[op_index].size = size;
 				max_index = (index > max_index) ? index : max_index;
 				break;
 			case 'r':
-				fscanf(tracefile, "%u %u", &index, &size);
+				if (fscanf(tracefile, "%u %u", &index, &size)){};
 				trace->ops[op_index].type = REALLOC;
 				trace->ops[op_index].index = index;
 				trace->ops[op_index].size = size;
 				max_index = (index > max_index) ? index : max_index;
 				break;
 			case 'f':
-				fscanf(tracefile, "%ud", &index);
+				if (fscanf(tracefile, "%ud", &index)){};
 				trace->ops[op_index].type = FREE;
 				trace->ops[op_index].index = index;
 				break;
