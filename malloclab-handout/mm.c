@@ -14,6 +14,7 @@
 #include <stdlib.h>
 #include <string.h>
 #include <unistd.h>
+#include <stdint.h>
 
 #include "mm.h"
 #include "memlib.h"
@@ -60,16 +61,15 @@
 
 #define MAX(x, y) ((x) > (y) ? (x) : (y))
 
-
 #define PACK(size, alloc, prev_alloc) ((size) | (alloc) | (prev_alloc << 1))
 
 #define GET(p) (*(unsigned int*)(p))
 #define PUT(p, val) (*(unsigned int*)(p) = (val))
 
-#define GET_NEXT_POINTER(p) (*(void**)(p))
-#define GET_PREV_POINTER(p) (*((void**)(p) + 1))
-#define PUT_NEXT_POINTER(p, add) (*(void**)(p) = (add))
-#define PUT_PREV_POINTER(p, add) (*((void**)(p) + 1) = (add))
+#define GET_NEXT_POINTER(p) ((void*)((int64_t)(*(unsigned int*)(p) == 0 ? 0 : (*(unsigned int*)(p)+0x800000000))))
+#define GET_PREV_POINTER(p) ((void*)((int64_t)(*(unsigned int*)((char*)p + WSIZE) == 0 ? 0 : (*(unsigned int*)((char*)p + WSIZE) + 0x800000000))))
+#define PUT_NEXT_POINTER(p, add) (*(unsigned int*)(p) = (uintptr_t)(add == NULL ? 0 : add-0x800000000))
+#define PUT_PREV_POINTER(p, add) (*(unsigned int*)((char*)p + WSIZE) = (uintptr_t)(add == NULL ? 0 : add-0x800000000))
 
 // Given pointer to 
 #define GET_SIZE(p) (GET(p) & ~0x7)
@@ -145,7 +145,6 @@ static void *extend_heap(size_t words) {
 		PUT(FTRP(bp), PACK(size, 0, 0));
 		PUT(HDRP(NEXT_BLKP(bp)), PACK(0, 1, 0));
 	}
-
 	return coalesce(bp);
 }
 
@@ -274,7 +273,7 @@ void *malloc(size_t size) {
 	size_t asize;
 	void* ptr;
 	
-	size_t words = MAX(6, ((size + WSIZE + (WSIZE-1)) / WSIZE));
+	size_t words = MAX(4, ((size + WSIZE + (WSIZE-1)) / WSIZE));
 	asize = (words & 1 ? (words+1) : words) * WSIZE;
 
 	if ((ptr = find_fit(asize)) == NULL) {
@@ -335,7 +334,6 @@ void free(void *ptr) {
 	if (!next_alloc) {
 		PUT(FTRP(NEXT_BLKP(ptr)), PACK(next_size, next_alloc, 0));
 	}
-
 	coalesce(ptr);
 	checkheap(__LINE__);
 }
@@ -474,6 +472,13 @@ void mm_checkheap(int lineno) {
 
 	int free_blocks = 0;
 
+	printf("free_block for line %d:\n", lineno);
+	for (char* cur = free_root; cur != NULL; cur = GET_NEXT_POINTER(cur)) {
+		printf("%p -> ", cur);
+		free_blocks -= 1;
+	}
+	printf("\n");
+
 	for (void* ptr = heap_listp; GET_SIZE(HDRP(ptr)) != 0; ptr = NEXT_BLKP(ptr)) {
 		if (!GET_ALLOC(HDRP(ptr))) {
 			free_blocks += 1;
@@ -511,10 +516,6 @@ void mm_checkheap(int lineno) {
 		prev_alloc = GET_ALLOC(HDRP(ptr));
 	}
 
-	//printf("\n");
-	for (char* cur = free_root; cur != NULL; cur = GET_NEXT_POINTER(cur)) {
-		free_blocks -= 1;
-	}
 
 	if (free_blocks != 0) {
 		printf("not allocated list\n");
