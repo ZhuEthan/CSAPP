@@ -292,7 +292,7 @@ static void place(void *bp, size_t asize) {
 	size_t o_size = GET_SIZE(HDRP(bp));
 	remove_block(bp);
 
-	if (o_size-asize >= 6*WSIZE) {
+	if (o_size-asize >= 4*WSIZE) {
 		PUT(HDRP(bp), PACK(asize, 1, 1));
 		PUT(HDRP(NEXT_BLKP(bp)), PACK(o_size-asize, 0, 1));
 		PUT(FTRP(NEXT_BLKP(bp)), PACK(o_size-asize, 0, 1));
