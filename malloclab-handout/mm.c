@@ -57,7 +57,7 @@
 
 #define WSIZE 4
 #define DSIZE 8
-#define CHUNKSIZE (1 << 12)
+#define CHUNKSIZE (1 << 9)
 
 #define MAX(x, y) ((x) > (y) ? (x) : (y))
 
@@ -86,9 +86,11 @@
 
 #define NEXT_FREE_BLKP(bp) (GET(bp))
 
+#define SEG_LIMIT 24 
+
 static char* heap_listp = 0;
 
-static char* free_root = 0;
+static void** seg_list = 0;
 
 #ifdef NEXT_FIT
 static char* rover;
@@ -99,15 +101,40 @@ static void place(void *bp, size_t asize);
 static void *find_fit(size_t asize);
 static void *coalesce(void *bp);
 static void printblock(void *bp);
-//static void checkheap(int verbose);
+static void print_free_list();
 static void checkblock(void *bp, int lineno);
+
+static inline int get_seglist_bucket(size_t size) {
+	int words = size / WSIZE;
+	int i = 0;
+	while (words > 1) {
+		words >>= 1;
+		i += 1;
+	}
+	return i;
+}
+
+static inline void* get_seglist_root(int seglist_bucket) {
+	unsigned int offset = *(unsigned int*)((char*)seg_list + WSIZE*seglist_bucket);
+	return (void*)(offset == 0 ? 0 : offset + 0x800000000);
+}
+
+static inline void set_seglist_root(int id, void* ptr) {
+	*(unsigned int*)((char*)seg_list + WSIZE*id) = (uintptr_t)(ptr == NULL ? 0 : ptr-0x800000000);
+}
+
 
 /*
  * mm_init - Called when a new trace starts.
  */
 int mm_init(void) {
 	heap_listp = 0;
-	free_root = 0;
+	seg_list = 0;
+
+	if ((seg_list = mem_sbrk(SEG_LIMIT * WSIZE)) == (void*)-1) {
+		return -1;
+	}
+	memset(seg_list, 0, SEG_LIMIT*WSIZE);
 
 	if ((heap_listp = mem_sbrk(4 * WSIZE)) == (void*)-1) {
 		return -1;
@@ -120,7 +147,7 @@ int mm_init(void) {
 
 	heap_listp += 2*WSIZE;
 
-	if ((free_root = extend_heap(CHUNKSIZE/WSIZE)) == NULL) {
+	if (extend_heap(CHUNKSIZE/WSIZE) == NULL) {
 		return -1;
 	}
 	return 0;
@@ -158,12 +185,16 @@ static void remove_block(void* bp) {
 */
 	void* prev_node = GET_PREV_POINTER(bp);
 	void* next_node = GET_NEXT_POINTER(bp);
+	int seglist_bucket = get_seglist_bucket(GET_SIZE(HDRP(bp)));
+	//void* seglist_root = get_seglist_root(seglist_bucket);
+
 	if (prev_node == NULL && next_node == NULL) {
-		free_root = NULL;
+		set_seglist_root(seglist_bucket, NULL);
+		//seglist_root = NULL;
 	} else if (prev_node != NULL && next_node == NULL) {
 		PUT_NEXT_POINTER(prev_node, NULL);
 	} else if (prev_node == NULL && next_node != NULL) {
-		free_root = next_node;
+		set_seglist_root(seglist_bucket, next_node);
 		PUT_PREV_POINTER(next_node, NULL);
 	} else {
 		PUT_PREV_POINTER(next_node, prev_node);
@@ -172,20 +203,22 @@ static void remove_block(void* bp) {
 }
 
 
-static void insert_head(void* bp) {
+static void insert_head(void* bp, size_t size) {
 /*
-	1. free_root is NULL
-	2. free_root points to some blocks. 
+	1. seglist_root is NULL
+	2. seglist_root points to some blocks. 
 */
-	if (free_root == NULL) {
-		free_root = bp;
+	int seg_list_bucket = get_seglist_bucket(size);
+	void* seglist_root = get_seglist_root(seg_list_bucket);
+	if (seglist_root == NULL) {
+		set_seglist_root(seg_list_bucket, bp);
 		PUT_NEXT_POINTER(bp, NULL);
 		PUT_PREV_POINTER(bp, NULL);
 	} else {
-		PUT_NEXT_POINTER(bp, free_root);
-		PUT_PREV_POINTER(free_root, bp);
+		PUT_NEXT_POINTER(bp, seglist_root);
+		PUT_PREV_POINTER(seglist_root, bp);
 		PUT_PREV_POINTER(bp, NULL);
-		free_root = bp;
+		set_seglist_root(seg_list_bucket, bp);
 	}
 }
 
@@ -200,23 +233,25 @@ static void *coalesce(void* bp) {
 	size_t prev_size; 
 
 	if (prev_alloc && next_alloc) {
-		insert_head(bp);
+		insert_head(bp, cur_size);
 		checkheap(__LINE__);
 		return bp;
 	} else if (prev_alloc && !next_alloc) {
 		remove_block(NEXT_BLKP(bp));
-		PUT(HDRP(bp), PACK(cur_size+next_size, 0, 1));
-		PUT(FTRP(bp), PACK(cur_size+next_size, 0, 1));
-		insert_head(bp);
+		size_t asize = cur_size + next_size;
+		PUT(HDRP(bp), PACK(asize, 0, 1));
+		PUT(FTRP(bp), PACK(asize, 0, 1));
+		insert_head(bp, asize);
 		checkheap(__LINE__);
 		return bp;
 	} else if (!prev_alloc && next_alloc) {
 		void* prev_bp = PREV_BLKP(bp);
-		prev_size = GET_SIZE(HDRP(PREV_BLKP(bp)));
-		PUT(HDRP(PREV_BLKP(bp)), PACK(cur_size + prev_size, 0, 1));
-		PUT(FTRP(PREV_BLKP(bp)), PACK(cur_size + prev_size, 0, 1));
 		remove_block(prev_bp);
-		insert_head(prev_bp);
+		prev_size = GET_SIZE(HDRP(PREV_BLKP(bp)));
+		size_t asize = cur_size + prev_size;
+		PUT(HDRP(PREV_BLKP(bp)), PACK(asize, 0, 1));
+		PUT(FTRP(PREV_BLKP(bp)), PACK(asize, 0, 1));
+		insert_head(prev_bp, asize);
 		checkheap(__LINE__);
 		return PREV_BLKP(bp);
 	} else {
@@ -226,9 +261,10 @@ static void *coalesce(void* bp) {
 		remove_block(next_bp);
 
 		prev_size = GET_SIZE(HDRP(PREV_BLKP(bp)));
-		PUT(HDRP(PREV_BLKP(bp)), PACK(cur_size + prev_size + next_size, 0, 1));
-		PUT(FTRP(PREV_BLKP(bp)), PACK(cur_size + prev_size + next_size, 0, 1));
-		insert_head(prev_bp);
+		size_t asize = cur_size + prev_size + next_size;
+		PUT(HDRP(PREV_BLKP(bp)), PACK(asize, 0, 1));
+		PUT(FTRP(PREV_BLKP(bp)), PACK(asize, 0, 1));
+		insert_head(prev_bp, asize);
 		checkheap(__LINE__);
 		return PREV_BLKP(bp);
 	}
@@ -237,11 +273,13 @@ static void *coalesce(void* bp) {
 
 
 static void* find_fit(size_t asize) {
-	for (void* cur = free_root; cur != NULL; cur = GET_NEXT_POINTER(cur)) {
-		size_t hsize = GET_SIZE(HDRP(cur));
-		size_t alloc = GET_ALLOC(HDRP(cur));
-		if (hsize >= asize && !alloc) {
-			return cur;
+	for (int bucket = get_seglist_bucket(asize); bucket < SEG_LIMIT; bucket++) {
+		void* root = get_seglist_root(bucket);
+		for (void* cur = root; cur != NULL; cur = GET_NEXT_POINTER(cur)) {
+			size_t hsize = GET_SIZE(HDRP(cur));
+			if (hsize >= asize) {
+				return cur;
+			}
 		}
 	}
 	
@@ -294,9 +332,10 @@ static void place(void *bp, size_t asize) {
 
 	if (o_size-asize >= 4*WSIZE) {
 		PUT(HDRP(bp), PACK(asize, 1, 1));
-		PUT(HDRP(NEXT_BLKP(bp)), PACK(o_size-asize, 0, 1));
-		PUT(FTRP(NEXT_BLKP(bp)), PACK(o_size-asize, 0, 1));
-		insert_head(NEXT_BLKP(bp));
+		size_t new_size = o_size-asize;
+		PUT(HDRP(NEXT_BLKP(bp)), PACK(new_size, 0, 1));
+		PUT(FTRP(NEXT_BLKP(bp)), PACK(new_size, 0, 1));
+		insert_head(NEXT_BLKP(bp), new_size);
 	} else {
 		size_t n_size = GET_SIZE(HDRP(NEXT_BLKP(bp)));
 		size_t n_alloc = GET_ALLOC(HDRP(NEXT_BLKP(bp)));
@@ -452,6 +491,7 @@ void checkblock(void* ptr, int lineno) {
 	}
 }
 
+
 /*
  * mm_checkheap - There are no bugs in my code, so I don't need to check,
  *      so nah!
@@ -471,13 +511,6 @@ void mm_checkheap(int lineno) {
 	void* prev_ptr = NULL;
 
 	int free_blocks = 0;
-
-	printf("free_block for line %d:\n", lineno);
-	for (char* cur = free_root; cur != NULL; cur = GET_NEXT_POINTER(cur)) {
-		printf("%p -> ", cur);
-		free_blocks -= 1;
-	}
-	printf("\n");
 
 	for (void* ptr = heap_listp; GET_SIZE(HDRP(ptr)) != 0; ptr = NEXT_BLKP(ptr)) {
 		if (!GET_ALLOC(HDRP(ptr))) {
@@ -524,12 +557,22 @@ void mm_checkheap(int lineno) {
 				printf("%p -> ", ptr);
 			}
 		}
-		printf("\nfree list\n");
-		for (char* cur = free_root; cur != NULL; cur = GET_NEXT_POINTER(cur)) {
-			printf("%p -> ", cur);
-		}
-		printf("\nfree blocks number is not matched %d\n", free_blocks);
+		print_free_list();
+		printf("\nfree blocks number is not matched %d from line %d\n", free_blocks, lineno);
 		exit(1);
 	}
  	
+}
+
+static void print_free_list() {
+	printf("\nfree list");
+	for (int i = 0; i < SEG_LIMIT; i++) {
+		void* cur = *((void**)seg_list+i);
+		if (cur != NULL) printf("\nindex %d : \n", i);
+		for (; cur != NULL; cur = GET_NEXT_POINTER(cur)) {
+			printf("%p -> ", cur);
+		}
+		if (cur != NULL) printf("\n");
+	}
+	printf("\n");
 }
