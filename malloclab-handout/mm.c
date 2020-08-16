@@ -1,14 +1,6 @@
-/*
- * mm-naive.c - The fastest, least memory-efficient malloc package.
- *
- * In this naive approach, a block is allocated by simply incrementing
- * the brk pointer.  Blocks are never coalesced or reused.  The size of
- * a block is found at the first aligned word before the block (we need
- * it for realloc).
- *
- * This code is correct and blazingly fast, but very bad usage-wise since
- * it never frees anything.
- */
+/**
+https://zhuethan.github.io/2020-08-03-MallocLab-In-CSAPP/. Implement a malloc strategy on clean heap space. 
+*/
 #include <assert.h>
 #include <stdio.h>
 #include <stdlib.h>
@@ -30,7 +22,7 @@
 #endif
 
 /**
-|		1		2		3		4		5		6		7		8		9		10		11		12		13		14		15		16 
+|	1	2	3	4	5	6	7	8	9	10	11	12	13	14	15	16 
 |-----------------------------------------------------------------------------------------------------------------------------------
 |    ptr1  |  ptr2  |  ptr3 | ptr4  | ptr5 |  ptr6 |  ptr7 |  ptr8  | ptr9  | ptr10  | ptr11 | ptr12 | ptr13 | ptr14 | ptr15 | ptr16
 |	 ptr17 | ptr18  | ptr19 | ptr20 | ptr21| ptr22 | ptr23 | ptr24  | empty |    prologue    |  hdr  |  data ....            
@@ -45,7 +37,7 @@
 |
 |
 |
-|																															| ftr |
+|														| ftr |
 */
 
 
