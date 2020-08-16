@@ -19,7 +19,6 @@
 #include "mm.h"
 #include "memlib.h"
 
-#define NEXT_FITx
 
 /* If you want debugging output, use the following macro.  When you hand
  * in, remove the #define DEBUG line. */
@@ -30,10 +29,28 @@
 # define dbg_printf(...)
 #endif
 
+/**
+|		1		2		3		4		5		6		7		8		9		10		11		12		13		14		15		16 
+|-----------------------------------------------------------------------------------------------------------------------------------
+|    ptr1  |  ptr2  |  ptr3 | ptr4  | ptr5 |  ptr6 |  ptr7 |  ptr8  | ptr9  | ptr10  | ptr11 | ptr12 | ptr13 | ptr14 | ptr15 | ptr16
+|	 ptr17 | ptr18  | ptr19 | ptr20 | ptr21| ptr22 | ptr23 | ptr24  | empty |    prologue    |  hdr  |  data ....            
+	...    | ftr    |
+|
+|
+|
+...
+...
+|
+|
+|
+|
+|
+|																																| ftr |
+*/
+
 
 //#define checkheap(lineno) mm_checkheap(lineno)
 #define checkheap(lineno)
-
 
 /* do not change the following! */
 #ifdef DRIVER
@@ -186,11 +203,9 @@ static void remove_block(void* bp) {
 	void* prev_node = GET_PREV_POINTER(bp);
 	void* next_node = GET_NEXT_POINTER(bp);
 	int seglist_bucket = get_seglist_bucket(GET_SIZE(HDRP(bp)));
-	//void* seglist_root = get_seglist_root(seglist_bucket);
 
 	if (prev_node == NULL && next_node == NULL) {
 		set_seglist_root(seglist_bucket, NULL);
-		//seglist_root = NULL;
 	} else if (prev_node != NULL && next_node == NULL) {
 		PUT_NEXT_POINTER(prev_node, NULL);
 	} else if (prev_node == NULL && next_node != NULL) {
@@ -437,11 +452,6 @@ void printblock(void *bp) {
 	if (!GET_ALLOC(header)) {
 		printf("next: %p, prev: %p", GET_NEXT_POINTER(bp), GET_PREV_POINTER(bp));
 	}
-	/*size_t words = (size - (GET_ALLOC(header) ? 4 : 8)) / WSIZE;
-	for (unsigned int i = 0; i < words; i++) {
-		//printf(" %x |", GET(bp));
-		bp = (unsigned int*)bp + 1;
-	}*/
 	if (!GET_ALLOC(header)) { 
 		printf(" | fsize:%d, fallocated:%d, pallocated: %d", GET_SIZE(footer), GET_ALLOC(footer), GET_PREV_ALLOC(footer));
 	}
