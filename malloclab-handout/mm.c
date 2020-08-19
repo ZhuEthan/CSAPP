@@ -1,5 +1,5 @@
 /**
-https://zhuethan.github.io/2020-08-03-MallocLab-In-CSAPP/. Implement a malloc strategy on clean heap space. 
+https://zhuethan.github.io/2020-08-03-MallocLab-In-CSAPP/. Implement a malloc strategy on empty heap space. 
 */
 #include <assert.h>
 #include <stdio.h>
