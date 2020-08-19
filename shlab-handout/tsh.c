@@ -200,7 +200,7 @@ void eval(char *cmdline)
 		    printf("[%d] (%d) %s", maxjid(jobs), pid, cmdline);
 		}
 	}
-    sigprocmask(SIG_SETMASK, &prev_all, NULL);
+	sigprocmask(SIG_SETMASK, &prev_all, NULL);
 
     return;
 }
@@ -250,10 +250,10 @@ int parseline(const char *cmdline, char **argv)
 	   		buf++;
 
 		if (*buf == '\'') {
-	    	buf++;
-	    	delim = strchr(buf, '\'');
+			buf++;
+			delim = strchr(buf, '\'');
 		} else {
-	    	delim = strchr(buf, ' ');
+			delim = strchr(buf, ' ');
 		}
     }
     argv[argc] = NULL;
