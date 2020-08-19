@@ -113,7 +113,7 @@ int main(int argc, char **argv)
 	   	 	break;
 		default:
             usage();
-		}
+	}
     }
 
     /* Install the signal handlers */
@@ -132,22 +132,22 @@ int main(int argc, char **argv)
     /* Execute the shell's read/eval loop */
     while (1) {
 
-		/* Read command line */
-		if (emit_prompt) {
-	    	printf("%s", prompt);
-	    	fflush(stdout);
-		}
-		if ((fgets(cmdline, MAXLINE, stdin) == NULL) && ferror(stdin))
-	    	app_error("fgets error");
-		if (feof(stdin)) { /* End of file (ctrl-d) */
-	    	fflush(stdout);
-	    	exit(0);
-		}
+	/* Read command line */
+	if (emit_prompt) {
+	    printf("%s", prompt);
+	    fflush(stdout);
+	}
+	if ((fgets(cmdline, MAXLINE, stdin) == NULL) && ferror(stdin))
+	    app_error("fgets error");
+	if (feof(stdin)) { /* End of file (ctrl-d) */
+	    fflush(stdout);
+	    exit(0);
+	}
 
-		/* Evaluate the command line */
-		eval(cmdline);
-		fflush(stdout);
-		fflush(stdout);
+	/* Evaluate the command line */
+	eval(cmdline);
+	fflush(stdout);
+	fflush(stdout);
     } 
 
     exit(0); /* control never reaches here */
