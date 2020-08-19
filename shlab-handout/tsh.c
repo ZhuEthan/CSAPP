@@ -197,7 +197,7 @@ void eval(char *cmdline)
 			waitfg(pid);
 		} else {
 			addjob(jobs, pid, BG, cmdline);
-		    printf("[%d] (%d) %s", maxjid(jobs), pid, cmdline);
+			printf("[%d] (%d) %s", maxjid(jobs), pid, cmdline);
 		}
 	}
 	sigprocmask(SIG_SETMASK, &prev_all, NULL);
