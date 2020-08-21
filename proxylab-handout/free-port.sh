@@ -9,7 +9,7 @@ port=${PORT_START}
 
 while [ TRUE ] 
 do
-  portsinuse=`netstat -p tcp | grep tcp | \
+  portsinuse=`netstat --numeric-ports --numeric-hosts -a --protocol=tcpip | grep tcp | \
     cut -c21- | cut -d':' -f2 | cut -d' ' -f1 | grep -E "[0-9]+" | uniq | tr "\n" " "`
 
   echo "${portsinuse}" | grep -wq "${port}"
