@@ -14,15 +14,17 @@ void doit(int fd);
 void forward_requesthdrs(rio_t *rp, char* hostname, char* port, char* path);
 void clienterror(int fd, char*cause, char* errnum, char* shortmsg, char* longmsg);
 void parse_uri(char* uri, char* hostname, char* port, char* path);
+void *thread(void* vargp);
 
 int main(int argc, char** argv)
 {
     printf("%s", user_agent_hdr);
 	printf("input (%s, %s)\n", argv[0], argv[1]);
-	int listenfd, fd_from_client;
+	int listenfd, *fd_from_client;
 	char hostname[MAXLINE], port[MAXLINE];
 	socklen_t clientlen;
 	struct sockaddr_storage clientaddr;
+	pthread_t tid;
 
 	if (argc != 2) {
 		fprintf(stderr, "usage: %s <port>\n", argv[0]);
@@ -32,14 +34,24 @@ int main(int argc, char** argv)
 	listenfd = Open_listenfd(argv[1]);
 	while (1) {
 		clientlen = sizeof(clientaddr);
-		fd_from_client = Accept(listenfd, (SA*)&clientaddr, &clientlen);
+		
+		fd_from_client = Malloc(sizeof(int));
+		*fd_from_client = Accept(listenfd, (SA*)&clientaddr, &clientlen);
 		Getnameinfo((SA *)&clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE, 0);
 		printf("Accepted connection from (%s, %s)\n", hostname, port);
-		doit(fd_from_client);
-		Close(fd_from_client);
+		Pthread_create(&tid, NULL, thread, fd_from_client);
 	}
 
     return 0;
+}
+
+void *thread(void *vargp) {
+	int fd_from_client = *((int*)vargp);
+	Pthread_detach(pthread_self());
+	Free(vargp);
+	doit(fd_from_client);
+	Close(fd_from_client);
+	return NULL;
 }
 
 void doit(int fd_from_client) {
