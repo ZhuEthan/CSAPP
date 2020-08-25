@@ -1,4 +1,7 @@
 #include <stdio.h>
+#include <string.h>
+#include <regex.h>
+#include "csapp.h"
 
 /* Recommended max cache and object sizes */
 #define MAX_CACHE_SIZE 1049000
@@ -7,8 +10,150 @@
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
 
-int main()
+void doit(int fd);
+void forward_requesthdrs(rio_t *rp, char* hostname, char* port, char* path);
+void clienterror(int fd, char*cause, char* errnum, char* shortmsg, char* longmsg);
+void parse_uri(char* uri, char* hostname, char* port, char* path);
+
+int main(int argc, char** argv)
 {
     printf("%s", user_agent_hdr);
+	printf("input (%s, %s)\n", argv[0], argv[1]);
+	int listenfd, fd_from_client;
+	char hostname[MAXLINE], port[MAXLINE];
+	socklen_t clientlen;
+	struct sockaddr_storage clientaddr;
+
+	if (argc != 2) {
+		fprintf(stderr, "usage: %s <port>\n", argv[0]);
+		exit(1);
+	}
+	
+	listenfd = Open_listenfd(argv[1]);
+	while (1) {
+		clientlen = sizeof(clientaddr);
+		fd_from_client = Accept(listenfd, (SA*)&clientaddr, &clientlen);
+		Getnameinfo((SA *)&clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE, 0);
+		printf("Accepted connection from (%s, %s)\n", hostname, port);
+		doit(fd_from_client);
+		Close(fd_from_client);
+	}
+
     return 0;
 }
+
+void doit(int fd_from_client) {
+	char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
+	char hostname[MAXLINE], path[MAXLINE], port[MAXLINE];
+	rio_t rio_from_client;
+
+	Rio_readinitb(&rio_from_client, fd_from_client);
+	if (!Rio_readlineb(&rio_from_client, buf, MAXLINE))
+		return;
+	printf("%s", buf);
+	sscanf(buf, "%s %s %s", method, uri, version);
+
+
+	if (strcasecmp(method, "GET")) {
+		clienterror(fd_from_client, method, "501", "Not Implemented", "Tiny does not implement this method");
+		return;
+	}
+	parse_uri(uri, hostname, port, path);
+	printf("==========forward started==========\n");
+	forward_requesthdrs(&rio_from_client, hostname, port, path);
+}
+
+void forward_requesthdrs(rio_t* rio_from_client, char* hostname, char* port, char* path) {
+	ssize_t n = 0;
+	char buf[MAXLINE];
+	int fd_to_server = Open_clientfd(hostname, port);
+	rio_t rio_to_server;
+	
+	sprintf(buf, "GET /%s HTTP/1.0\r\n", path);
+	printf("%s", buf);
+	Rio_writen(fd_to_server, buf, strlen(buf));
+
+	do {
+		n = Rio_readlineb(rio_from_client, buf, MAXLINE);
+		if (strncmp(buf, "Host:", 5) && strncmp(buf, "User-Agent:", 10) && strncmp(buf, "Connection:", 10) && strncmp(buf, "Proxy-Connection:", 17) && strncmp(buf, "\r\n", 2)) {
+			printf("%s", buf);
+			Rio_writen(fd_to_server, buf, n);
+		}
+	} while (strcmp(buf, "\r\n"));
+
+	Rio_readinitb(&rio_to_server, fd_to_server);
+
+	sprintf(buf, "Host: %s\r\n", hostname);
+	printf("%s", buf);
+	Rio_writen(fd_to_server, buf, strlen(buf));
+	sprintf(buf, "%s", user_agent_hdr);
+	printf("%s", buf);
+	Rio_writen(fd_to_server, buf, strlen(buf));
+	sprintf(buf, "Connection: close\r\n");
+	printf("%s", buf);
+	Rio_writen(fd_to_server, buf, strlen(buf));
+	sprintf(buf, "Proxy-Connection: close\r\n\r\n");
+	printf("%s", buf);
+	Rio_writen(fd_to_server, buf, strlen(buf));
+	
+	printf("========== recieve reponse and forward ========\n");
+	do {
+		n = Rio_readlineb(&rio_to_server, buf, MAXLINE);
+		Fputs(buf, stdout);
+		Rio_writen(rio_from_client->rio_fd, buf, n);
+	} while (n != 0);
+	
+	Close(fd_to_server);
+
+	return;
+}
+
+void clienterror(int fd, char* cause, char* errnum, char* shortmsg, char* longmsg) {
+	char buf[MAXLINE];
+	
+	sprintf(buf, "HTTP/1.0 %s %s\r\n", errnum, shortmsg);
+	Rio_writen(fd, buf, strlen(buf));
+	sprintf(buf, "Content-type: text/html\r\n\r\n");
+	Rio_writen(fd, buf, strlen(buf));
+
+	sprintf(buf, "<html><title>Proxy Error</title>");
+	Rio_writen(fd, buf, strlen(buf));
+	sprintf(buf, "<body bgcolor=""ffffff"">\r\n");
+	Rio_writen(fd, buf, strlen(buf));
+	sprintf(buf, "%s: %s\r\n", errnum, shortmsg);
+	Rio_writen(fd, buf, strlen(buf));
+	sprintf(buf, "<p>%s: %s\r\n", longmsg, cause);
+	Rio_writen(fd, buf, strlen(buf));
+	sprintf(buf, "<hr><em>The proxy server</em>\r\n");
+	Rio_writen(fd, buf, strlen(buf));
+
+}
+
+void parse_uri(char* uri, char* hostname, char* port, char* path) {
+	regex_t reg;
+	int reg_res;
+	int status;
+	
+	reg_res = regcomp(&reg, "^http://[^:]+:[0-9]+.*", REG_EXTENDED);
+	if (!reg_res) {
+		printf("regEx compiled successfully\n");
+	} else {
+		printf("compilation error\n");
+	}
+
+	status = regexec(&reg, uri, 0, NULL, 0);
+	regfree(&reg);
+
+	if (status == 0) {
+		printf("port is inputted for uri %s\n", uri);
+		sscanf(uri, "http://%99[^:/]:%99[^/]/%99[^\n]", hostname, port, path);
+	} else {
+		printf("no port is inputted for uri %s\n", uri);
+		sscanf(uri, "http://%99[^:/]/%99[^\n]", hostname, path);
+		sscanf("80", "%s", port);
+	}
+	printf("hostname = %s\n", hostname);
+	printf("port = %s\n", port);
+	printf("path = %s\n", path);
+}
+
