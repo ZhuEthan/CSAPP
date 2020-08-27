@@ -29,11 +29,11 @@ void insert_cache(char* uri, size_t uri_length, char* object, size_t object_size
 //key is not found and cache is not full
 		index = cache.rear;
 		cache.rear += 1;
-		cache.buf[index] = Malloc(sizeof(sbuf_t));
+		cache.buf[index] = (sbuf_t*)Malloc(sizeof(sbuf_t));
 	}
 	
-	memcpy(cache.buf[index]->buf, object, MIN(MAX_OBJECT_SIZE, object_size));
-	strncpy(cache.buf[index]->uri, uri, MIN(MAX_URL_SIZE, MAX_URL_SIZE));
+	memcpy(cache.buf[index]->buf, object, object_size);
+	strncpy(cache.buf[index]->uri, uri, MIN(MAX_URL_SIZE, uri_length));
 	cache.buf[index]->buffer_size = object_size;
 	cache.buf[index]->timestamp = cache.time;
 	cache.t_size += object_size;
@@ -54,7 +54,7 @@ int find_earliest_slot() {
 int get_index_by_uri(char* uri, size_t uri_length) {
 	cache.time += 1;
 	for (size_t i = 0; i < cache.rear; i++) {
-		if (!strncmp(cache.buf[i]->uri, uri, MIN(uri_length, MAX_URL_SIZE))) {
+		if (!strncmp(cache.buf[i]->uri, uri, uri_length)) {
 			cache.buf[i]->timestamp = cache.time;
 			return i;
 		}
@@ -74,7 +74,7 @@ sbuf_t* get_object_by_uri(char* uri, size_t uri_length) {
 void check_cache() {
 	size_t n = 0; 
 	for (size_t i = 0; i < cache.rear; i++) {
-		printf("key: %s, content: %s, ts: %zu\n", cache.buf[i]->uri, cache.buf[i]->buf, cache.buf[i]->timestamp);
+		printf("key: %s, content: %s, ts: %zu\n, buffer_size: %zu", cache.buf[i]->uri, cache.buf[i]->buf, cache.buf[i]->timestamp, cache.buf[i]->buffer_size);
 		n += cache.buf[i]->buffer_size;
 	}
 	printf("\n");

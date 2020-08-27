@@ -28,3 +28,8 @@ void check_cache();
 int get_index_by_uri(char* uri, size_t uri_length);
 sbuf_t* get_object_by_uri(char* uri, size_t uri_length);
 
+void acquire_read_lock();
+void release_read_lock();
+void acquire_write_lock();
+void release_write_lock();
+
