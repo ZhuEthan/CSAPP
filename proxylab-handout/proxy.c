@@ -10,9 +10,6 @@
 
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
-sem_t mutex;
-sem_t w;
-volatile int readcnt;
 
 void doit(int fd);
 void forward_requesthdrs(rio_t *rp, char* uri);
@@ -24,9 +21,8 @@ int main(int argc, char** argv)
 {
     printf("%s", user_agent_hdr);
 	printf("input (%s, %s)\n", argv[0], argv[1]);
-	//Sem_init(&mutex, 0, 1);
-	//Sem_init(&w, 0, 1);
-	//readcnt = 0;
+
+	init_cache();
 	int listenfd, *fd_from_client;
 	char hostname[MAXLINE], port[MAXLINE];
 	socklen_t clientlen;
@@ -76,30 +72,18 @@ void doit(int fd_from_client) {
 		return;
 	}
 
-	//acquire_read_lock();
-	/*P(&mutex);
-	readcnt += 1;
-	if (readcnt == 1) {
-		P(&w);
-	}
-	V(&mutex);*/
-
-	sbuf_t* t_buf=get_object_by_uri(uri, strlen(uri));
-
-	/*P(&mutex);
-	readcnt -= 1;
-	if (readcnt == 0) {
-		V(&w);
-	}
-	V(&mutex);*/
-
+	acquire_read_lock();
+	sbuf_t* t_buf = get_object_by_uri(uri, strlen(uri));
 	if ((t_buf) != NULL) {
 		printf("==========cache caught==========\n");
 		Rio_writen(fd_from_client, t_buf->buf, t_buf->buffer_size);
+		release_read_lock();
 	} else {
+		release_read_lock();
 		printf("==========forward started==========\n");
 		forward_requesthdrs(&rio_from_client, uri);
 	}
+
 	check_cache();
 }
 
@@ -148,14 +132,15 @@ void forward_requesthdrs(rio_t* rio_from_client, char* uri) {
 		memcpy(offset, buf, n);
 		offset += n;
 	} while (n != 0);
-	Fputs(cache_value, stdout);
 
-	//P(&w);
-	insert_cache(uri, strlen(uri), cache_value, offset-cache_value);
-	//V(&w);
 
 	Rio_writen(rio_from_client->rio_fd, cache_value, offset-cache_value);
-	
+
+	acquire_write_lock();
+	insert_cache(uri, strlen(uri), cache_value, offset-cache_value);
+	release_write_lock();
+
+	Free(cache_value);
 	Close(fd_to_server);
 
 	return;

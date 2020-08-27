@@ -5,10 +5,17 @@
 
 cache_t cache;
 
+sem_t mutex;
+sem_t w;
+volatile int readcnt;
+
 void init_cache() {
 	cache.rear = 0;
 	cache.t_size = 0;
 	cache.time = 0;
+	Sem_init(&mutex, 0, 1);
+	Sem_init(&w, 0, 1);
+	readcnt = 0;
 }
 
 void insert_cache(char* uri, size_t uri_length, char* object, size_t object_size) {
@@ -33,7 +40,8 @@ void insert_cache(char* uri, size_t uri_length, char* object, size_t object_size
 	}
 	
 	memcpy(cache.buf[index]->buf, object, MIN(MAX_OBJECT_SIZE, object_size));
-	strncpy(cache.buf[index]->uri, uri, MIN(MAX_URL_SIZE, MAX_URL_SIZE));
+	strncpy(cache.buf[index]->uri, uri, MIN(MAX_URL_SIZE, MAX_URL_SIZE-1));
+	(cache.buf[index]->uri)[MAX_URL_SIZE-1] = '\0';
 	cache.buf[index]->buffer_size = object_size;
 	cache.buf[index]->timestamp = cache.time;
 	cache.t_size += object_size;
@@ -54,7 +62,7 @@ int find_earliest_slot() {
 int get_index_by_uri(char* uri, size_t uri_length) {
 	cache.time += 1;
 	for (size_t i = 0; i < cache.rear; i++) {
-		if (!strncmp(cache.buf[i]->uri, uri, MIN(uri_length, MAX_URL_SIZE))) {
+		if (!strcmp(cache.buf[i]->uri, uri)) {
 			cache.buf[i]->timestamp = cache.time;
 			return i;
 		}
@@ -84,6 +92,32 @@ void check_cache() {
 	}
 	printf("cache rear is %zu\n", cache.rear);
 	printf("total size %zu\n", cache.t_size);
+}
+
+void acquire_read_lock() {
+	P(&mutex);
+	readcnt += 1;
+	if (readcnt == 1) {
+		P(&w);
+	}
+	V(&mutex);
+}
+
+void release_read_lock() {
+	P(&mutex);
+	readcnt--;
+	if (readcnt == 0) {
+		V(&w);
+	}
+	V(&mutex);
+}
+
+void acquire_write_lock() {
+	P(&w);
+}
+
+void release_write_lock() {
+	V(&w);
 }
 
 /*
