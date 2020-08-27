@@ -2,6 +2,7 @@
 #include <string.h>
 #include <regex.h>
 #include "csapp.h"
+#include "cache.h"
 
 /* Recommended max cache and object sizes */
 #define MAX_CACHE_SIZE 1049000
@@ -9,9 +10,12 @@
 
 /* You won't lose style points for including this long line in your code */
 static const char *user_agent_hdr = "User-Agent: Mozilla/5.0 (X11; Linux x86_64; rv:10.0.3) Gecko/20120305 Firefox/10.0.3\r\n";
+sem_t mutex;
+sem_t w;
+volatile int readcnt;
 
 void doit(int fd);
-void forward_requesthdrs(rio_t *rp, char* hostname, char* port, char* path);
+void forward_requesthdrs(rio_t *rp, char* uri);
 void clienterror(int fd, char*cause, char* errnum, char* shortmsg, char* longmsg);
 void parse_uri(char* uri, char* hostname, char* port, char* path);
 void *thread(void* vargp);
@@ -20,6 +24,9 @@ int main(int argc, char** argv)
 {
     printf("%s", user_agent_hdr);
 	printf("input (%s, %s)\n", argv[0], argv[1]);
+	//Sem_init(&mutex, 0, 1);
+	//Sem_init(&w, 0, 1);
+	//readcnt = 0;
 	int listenfd, *fd_from_client;
 	char hostname[MAXLINE], port[MAXLINE];
 	socklen_t clientlen;
@@ -32,9 +39,8 @@ int main(int argc, char** argv)
 	}
 	
 	listenfd = Open_listenfd(argv[1]);
+	clientlen = sizeof(clientaddr);
 	while (1) {
-		clientlen = sizeof(clientaddr);
-		
 		fd_from_client = Malloc(sizeof(int));
 		*fd_from_client = Accept(listenfd, (SA*)&clientaddr, &clientlen);
 		Getnameinfo((SA *)&clientaddr, clientlen, hostname, MAXLINE, port, MAXLINE, 0);
@@ -56,7 +62,6 @@ void *thread(void *vargp) {
 
 void doit(int fd_from_client) {
 	char buf[MAXLINE], method[MAXLINE], uri[MAXLINE], version[MAXLINE];
-	char hostname[MAXLINE], path[MAXLINE], port[MAXLINE];
 	rio_t rio_from_client;
 
 	Rio_readinitb(&rio_from_client, fd_from_client);
@@ -70,14 +75,41 @@ void doit(int fd_from_client) {
 		clienterror(fd_from_client, method, "501", "Not Implemented", "Tiny does not implement this method");
 		return;
 	}
-	parse_uri(uri, hostname, port, path);
-	printf("==========forward started==========\n");
-	forward_requesthdrs(&rio_from_client, hostname, port, path);
+
+	//acquire_read_lock();
+	/*P(&mutex);
+	readcnt += 1;
+	if (readcnt == 1) {
+		P(&w);
+	}
+	V(&mutex);*/
+
+	sbuf_t* t_buf=get_object_by_uri(uri, strlen(uri));
+
+	/*P(&mutex);
+	readcnt -= 1;
+	if (readcnt == 0) {
+		V(&w);
+	}
+	V(&mutex);*/
+
+	if ((t_buf) != NULL) {
+		printf("==========cache caught==========\n");
+		Rio_writen(fd_from_client, t_buf->buf, t_buf->buffer_size);
+	} else {
+		printf("==========forward started==========\n");
+		forward_requesthdrs(&rio_from_client, uri);
+	}
+	check_cache();
 }
 
-void forward_requesthdrs(rio_t* rio_from_client, char* hostname, char* port, char* path) {
+void forward_requesthdrs(rio_t* rio_from_client, char* uri) {
+	char hostname[MAXLINE], path[MAXLINE], port[MAXLINE];
+	parse_uri(uri, hostname, port, path);
+
 	ssize_t n = 0;
 	char buf[MAXLINE];
+	char* cache_value;
 	int fd_to_server = Open_clientfd(hostname, port);
 	rio_t rio_to_server;
 	
@@ -108,12 +140,21 @@ void forward_requesthdrs(rio_t* rio_from_client, char* hostname, char* port, cha
 	printf("%s", buf);
 	Rio_writen(fd_to_server, buf, strlen(buf));
 	
-	printf("========== recieve reponse and forward ========\n");
+	cache_value = Malloc(MAX_OBJECT_SIZE);
+	char* offset = cache_value;
+	printf("========== receive reponse from server and forward back to client========\n");
 	do {
 		n = Rio_readlineb(&rio_to_server, buf, MAXLINE);
-		Fputs(buf, stdout);
-		Rio_writen(rio_from_client->rio_fd, buf, n);
+		memcpy(offset, buf, n);
+		offset += n;
 	} while (n != 0);
+	Fputs(cache_value, stdout);
+
+	//P(&w);
+	insert_cache(uri, strlen(uri), cache_value, offset-cache_value);
+	//V(&w);
+
+	Rio_writen(rio_from_client->rio_fd, cache_value, offset-cache_value);
 	
 	Close(fd_to_server);
 
